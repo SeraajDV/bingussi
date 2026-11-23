@@ -39,7 +39,7 @@ export default function Home() {
         <div className="mx-auto grid max-w-7xl gap-8 px-5 py-10 sm:grid-cols-3 sm:px-8 sm:py-12">
           {[
             { icon: UsersRound, title: "Better together", text: "A little friendly competition for your favorite people." },
-            { icon: CalendarDays, title: "A daily ritual", text: "A fresh opportunity to play, every single day." },
+            { icon: CalendarDays, title: "Your kind of ritual", text: "Fresh rounds on a schedule that suits you." },
             { icon: Sparkles, title: "Make it yours", text: "Your room, your grid, your kind of fun." },
           ].map(({ icon: Icon, title, text }) => (
             <div key={title} className="flex gap-4">

@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   toggle: vi.fn(),
   confetti: vi.fn(),
   toastError: vi.fn(),
-  clock: { dateKey: "2026-11-23", countdown: "08:30:00" },
+  clock: { now: Date.parse("2026-11-23T12:00:00Z"), nextResetAt: Date.parse("2026-11-24T00:00:00Z"), dateKey: "2026-11-23", countdown: "08:30:00" },
 }));
 vi.mock("convex/react", () => ({
   useConvexAuth: () => ({ isAuthenticated: true, isLoading: false }),
@@ -25,7 +25,7 @@ vi.mock("convex/react", () => ({
 }));
 vi.mock("canvas-confetti", () => ({ default: mocks.confetti }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: mocks.toastError } }));
-vi.mock("@/lib/use-utc-clock", () => ({ useUtcClock: () => mocks.clock }));
+vi.mock("@/lib/use-reset-clock", () => ({ useResetClock: () => mocks.clock }));
 
 const roomId = "room123" as Id<"rooms">;
 const userId = "user123" as Id<"users">;
@@ -44,14 +44,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.generate.mockReset();
   mocks.toggle.mockReset().mockResolvedValue(null);
-  mocks.query.mockImplementation((name: string) => name === "rooms:getRoomState" ? state : card);
+  mocks.query.mockImplementation((name: string) => name === "rooms:getRoomSchedule" ? { frequency: "daily", time: "00:00", timeZone: "UTC" } : name === "rooms:getRoomState" ? state : card);
 });
 afterEach(cleanup);
 
 describe("daily gameplay", () => {
   it("generates a missing card and displays a retryable failure", async () => {
     const user = userEvent.setup();
-    mocks.query.mockImplementation((name: string) => name === "rooms:getRoomState" ? state : null);
+    mocks.query.mockImplementation((name: string) => name === "rooms:getRoomSchedule" ? { frequency: "daily", time: "00:00", timeZone: "UTC" } : name === "rooms:getRoomState" ? state : null);
     mocks.generate.mockRejectedValueOnce(new Error("Cannot generate card")).mockResolvedValueOnce(card);
     render(<RoomDetails roomId={roomId} />);
     expect((await screen.findByRole("alert")).textContent).toContain("Cannot generate card");
@@ -79,7 +79,7 @@ describe("daily gameplay", () => {
       cells: Array.from({ length: size * size }, (_, index) => ({ index, text: `Square ${index}`, isMarked: false })),
     };
     const largerState = { ...state, room: { ...state.room, gridSize: size, freeCenter: false } };
-    mocks.query.mockImplementation((name: string) => name === "rooms:getRoomState" ? largerState : largerCard);
+    mocks.query.mockImplementation((name: string) => name === "rooms:getRoomSchedule" ? { frequency: "daily", time: "00:00", timeZone: "UTC" } : name === "rooms:getRoomState" ? largerState : largerCard);
     const { container } = render(<RoomDetails roomId={roomId} />);
     expect(container.querySelector(`.grid-cols-${size}`)?.querySelectorAll("button")).toHaveLength(size * size);
   });
@@ -87,12 +87,12 @@ describe("daily gameplay", () => {
   it("highlights winning cells and celebrates a confirmed winner only once", () => {
     const winningCard = { ...card, hasBingo: true, cells: cells.map((cell) => ({ ...cell, isMarked: cell.index <= 2 || cell.isMarked })) };
     const winningState = { ...state, round: { winner: { id: userId, name: "Alice", imageUrl: null }, wonAt: 1795435200123 } };
-    mocks.query.mockImplementation((name: string) => name === "rooms:getRoomState" ? state : winningCard);
+    mocks.query.mockImplementation((name: string) => name === "rooms:getRoomSchedule" ? { frequency: "daily", time: "00:00", timeZone: "UTC" } : name === "rooms:getRoomState" ? state : winningCard);
     const view = render(<RoomDetails roomId={roomId} />);
     expect(mocks.confetti).not.toHaveBeenCalled();
-    mocks.query.mockImplementation((name: string) => name === "rooms:getRoomState" ? winningState : winningCard);
+    mocks.query.mockImplementation((name: string) => name === "rooms:getRoomSchedule" ? { frequency: "daily", time: "00:00", timeZone: "UTC" } : name === "rooms:getRoomState" ? winningState : winningCard);
     view.rerender(<RoomDetails roomId={roomId} />);
-    expect(screen.getByText(/Alice got BINGO and won today/)).toBeTruthy();
+    expect(screen.getByText(/Alice got BINGO and won this round/)).toBeTruthy();
     expect(screen.getByText(/2026-11-23 12:00:00.123 UTC/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Item 0" }).className).toContain("border-amber-400");
     expect(screen.getByRole("button", { name: "FREE, free center" }).className).not.toContain("border-amber-400");
@@ -107,7 +107,7 @@ describe("daily gameplay", () => {
     render(<RoomDetails roomId={roomId} />);
     await user.click(screen.getByRole("button", { name: "Item 0" }));
     expect(mocks.toggle).not.toHaveBeenCalled();
-    expect(mocks.toastError).toHaveBeenCalledWith(expect.stringContaining("UTC day has changed"));
+    expect(mocks.toastError).toHaveBeenCalledWith(expect.stringContaining("round has changed"));
     vi.useRealTimers();
   });
 });
@@ -139,13 +139,26 @@ describe("optimistic toggle", () => {
 
   describe("UTC countdown", () => {
     it("rolls the date and countdown over at midnight", async () => {
-      const { useUtcClock } = await vi.importActual<typeof import("@/lib/use-utc-clock")>("@/lib/use-utc-clock");
+      const { useResetClock } = await vi.importActual<typeof import("@/lib/use-reset-clock")>("@/lib/use-reset-clock");
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-11-23T23:59:59Z"));
-      const { result, unmount } = renderHook(() => useUtcClock());
-      expect(result.current).toEqual({ dateKey: "2026-11-23", countdown: "00:00:01" });
+      const { result, unmount } = renderHook(() => useResetClock());
+      expect(result.current).toEqual(expect.objectContaining({ dateKey: "2026-11-23", countdown: "00:00:01" }));
       act(() => { vi.advanceTimersByTime(1000); });
-      expect(result.current).toEqual({ dateKey: "2026-11-24", countdown: "24:00:00" });
+      expect(result.current).toEqual(expect.objectContaining({ dateKey: "2026-11-24", countdown: "1d 00:00:00" }));
+      unmount();
+      vi.useRealTimers();
+    });
+
+    it("rolls a weekly countdown over at the room's local reset", async () => {
+      const { useResetClock } = await vi.importActual<typeof import("@/lib/use-reset-clock")>("@/lib/use-reset-clock");
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-11-23T13:59:59Z"));
+      const schedule = { frequency: "weekly" as const, time: "09:00", timeZone: "America/New_York", dayOfWeek: 1 };
+      const { result, unmount } = renderHook(() => useResetClock(schedule));
+      expect(result.current).toEqual(expect.objectContaining({ dateKey: "2026-11-16", countdown: "00:00:01" }));
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(result.current).toEqual(expect.objectContaining({ dateKey: "2026-11-23", countdown: "7d 00:00:00" }));
       unmount();
       vi.useRealTimers();
     });

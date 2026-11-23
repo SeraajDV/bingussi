@@ -1,6 +1,12 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+export const resetScheduleValidator = v.union(
+  v.object({ frequency: v.literal("daily"), time: v.string(), timeZone: v.string() }),
+  v.object({ frequency: v.literal("weekly"), time: v.string(), timeZone: v.string(), dayOfWeek: v.number() }),
+  v.object({ frequency: v.literal("monthly"), time: v.string(), timeZone: v.string(), dayOfMonth: v.number() }),
+);
+
 export default defineSchema({
   numbers: defineTable({
     value: v.number(),
@@ -21,6 +27,7 @@ export default defineSchema({
     inviteCode: v.optional(v.string()),
     freeCenter: v.optional(v.boolean()),
     itemPool: v.optional(v.array(v.string())),
+    resetSchedule: v.optional(resetScheduleValidator),
   }).index("by_inviteCode", ["inviteCode"]),
   roomMembers: defineTable({
     roomId: v.id("rooms"),

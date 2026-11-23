@@ -39,11 +39,12 @@ describe("rooms", () => {
     await expect(t.mutation(api.rooms.createRoom, { name: "Room", gridSize: 3, itemPool: pool })).rejects.toThrow("signed in");
     await expect(alice.mutation(api.rooms.createRoom, { name: "Room", gridSize: 3, itemPool: pool.slice(1) })).rejects.toThrow("item pool");
     await expect(alice.mutation(api.rooms.createRoom, { name: "Room", gridSize: 4, freeCenter: true, itemPool: [...pool, ...pool] })).rejects.toThrow("odd-sized");
+    await expect(alice.mutation(api.rooms.createRoom, { name: "Room", gridSize: 3, itemPool: pool, resetSchedule: { frequency: "daily", time: "09:00", timeZone: "No/Such_Zone" } })).rejects.toThrow("time zone");
     const roomId = await alice.mutation(api.rooms.createRoom, { name: "Room", gridSize: 3, itemPool: pool });
     await expect(outsider.query(api.rooms.getRoomState, { roomId, dateKey })).rejects.toThrow("not a member");
     await expect(outsider.mutation(api.rooms.getOrGenerateDailyCard, { roomId })).rejects.toThrow("not a member");
     await expect(outsider.mutation(api.rooms.toggleCell, { roomId, index: 0 })).rejects.toThrow("not a member");
-    await expect(alice.query(api.rooms.getDailyCard, { roomId, dateKey: "2026-02-30" })).rejects.toThrow("Invalid UTC date");
+    await expect(alice.query(api.rooms.getDailyCard, { roomId, dateKey: "2026-02-30" })).rejects.toThrow("Invalid round date");
     await expect(outsider.mutation(api.rooms.joinRoom, { inviteCode: "WRONG" })).rejects.toThrow("not found");
   });
 
@@ -58,6 +59,48 @@ describe("rooms", () => {
     const rooms = await alice.query(api.rooms.listMine, { paginationOpts: { cursor: null, numItems: 10 } });
     expect(rooms.page.map((room) => room.id)).toContain(roomId);
     await expect(alice.mutation(api.rooms.getOrGenerateDailyCard, { roomId })).rejects.toThrow("older room");
+  });
+
+  it.each([
+    {
+      schedule: { frequency: "daily" as const, time: "06:00", timeZone: "Africa/Johannesburg" },
+      before: "2026-11-23T03:59:59Z", after: "2026-11-23T04:00:00Z", oldKey: "2026-11-22", newKey: "2026-11-23",
+    },
+    {
+      schedule: { frequency: "weekly" as const, time: "09:00", timeZone: "America/New_York", dayOfWeek: 1 },
+      before: "2026-11-23T13:59:59Z", after: "2026-11-23T14:00:00Z", oldKey: "2026-11-16", newKey: "2026-11-23",
+    },
+    {
+      schedule: { frequency: "monthly" as const, time: "09:00", timeZone: "UTC", dayOfMonth: 31 },
+      before: "2027-02-28T08:59:59Z", after: "2027-02-28T09:00:00Z", oldKey: "2027-01-31", newKey: "2027-02-28",
+    },
+  ])("rolls cards and winners together on a $schedule.frequency schedule", async ({ schedule, before, after, oldKey, newKey }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(before));
+    const t = convexTest(schema, modules);
+    const alice = t.withIdentity({ subject: "alice", name: "Alice" });
+    const bob = t.withIdentity({ subject: "bob", name: "Bob" });
+    const outsider = t.withIdentity({ subject: "outsider" });
+    const roomId = await alice.mutation(api.rooms.createRoom, { name: "Room", gridSize: 3, itemPool: pool, resetSchedule: schedule });
+    expect(await alice.query(api.rooms.getRoomSchedule, { roomId })).toEqual(schedule);
+    const listed = await alice.query(api.rooms.listMine, { paginationOpts: { cursor: null, numItems: 10 } });
+    expect(listed.page[0]).toMatchObject({ activeRoundDate: oldKey, resetSchedule: schedule });
+    await expect(outsider.query(api.rooms.getRoomSchedule, { roomId })).rejects.toThrow("not a member");
+    const room = await alice.query(api.rooms.getRoomState, { roomId, dateKey: oldKey });
+    if (!room.room.inviteCode) throw new Error("Missing invite code");
+    await bob.mutation(api.rooms.joinRoom, { inviteCode: room.room.inviteCode });
+    const aliceCard = await alice.mutation(api.rooms.getOrGenerateDailyCard, { roomId, expectedDateKey: oldKey });
+    const bobCard = await bob.mutation(api.rooms.getOrGenerateDailyCard, { roomId, expectedDateKey: oldKey });
+    for (const index of [0, 1, 2]) await alice.mutation(api.rooms.toggleCell, { roomId, index, expectedDateKey: oldKey });
+    expect((await bob.query(api.rooms.getRoomState, { roomId, dateKey: oldKey })).round?.winner?.name).toBe("Alice");
+    vi.setSystemTime(new Date(after));
+    await expect(alice.mutation(api.rooms.toggleCell, { roomId, index: 0, expectedDateKey: oldKey })).rejects.toThrow("round has changed");
+    const nextAliceCard = await alice.mutation(api.rooms.getOrGenerateDailyCard, { roomId, expectedDateKey: newKey });
+    const nextBobCard = await bob.mutation(api.rooms.getOrGenerateDailyCard, { roomId, expectedDateKey: newKey });
+    expect(nextAliceCard._id).not.toBe(aliceCard._id);
+    expect(nextBobCard._id).not.toBe(bobCard._id);
+    expect((await bob.query(api.rooms.getRoomState, { roomId, dateKey: newKey })).round?.winner).toBeNull();
+    expect((await bob.query(api.rooms.getRoomState, { roomId, dateKey: oldKey })).round?.winner?.name).toBe("Alice");
   });
 
   it("generates one card per day, tracks progress, and preserves the first winner", async () => {
@@ -94,8 +137,8 @@ describe("rooms", () => {
     expect((await alice.mutation(api.rooms.toggleCell, { roomId, index: 2 })).hasBingo).toBe(false);
     expect((await bob.query(api.rooms.getRoomState, { roomId, dateKey })).round?.winner?.name).toBe("Alice");
     vi.setSystemTime(new Date("2026-11-24T00:00:00Z"));
-    await expect(alice.mutation(api.rooms.toggleCell, { roomId, index: 0, expectedDateKey: dateKey })).rejects.toThrow("UTC day has changed");
-    await expect(alice.mutation(api.rooms.getOrGenerateDailyCard, { roomId, expectedDateKey: dateKey })).rejects.toThrow("UTC day has changed");
+    await expect(alice.mutation(api.rooms.toggleCell, { roomId, index: 0, expectedDateKey: dateKey })).rejects.toThrow("round has changed");
+    await expect(alice.mutation(api.rooms.getOrGenerateDailyCard, { roomId, expectedDateKey: dateKey })).rejects.toThrow("round has changed");
     const nextCard = await alice.mutation(api.rooms.getOrGenerateDailyCard, { roomId });
     expect(nextCard._id).not.toBe(aliceCard._id);
     expect(nextCard.dateKey).toBe("2026-11-24");

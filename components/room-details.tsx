@@ -12,10 +12,10 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { winningCellIndexes } from "@/convex/lib/bingo";
 import { optimisticToggle } from "@/lib/optimistic-bingo";
-import { useUtcClock } from "@/lib/use-utc-clock";
+import { useResetClock } from "@/lib/use-reset-clock";
+import { getRoundWindow } from "@/lib/reset-schedule";
 
 const gridClasses = { 3: "grid-cols-3", 4: "grid-cols-4", 5: "grid-cols-5" } as const;
-const dateFormatter = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 function WinnerBanner({ dateKey, name, winnerId, wonAt }: { dateKey: string; name: string; winnerId: Id<"users">; wonAt: number | null }) {
   const celebrated = useRef<string | null>(null);
@@ -30,8 +30,8 @@ function WinnerBanner({ dateKey, name, winnerId, wonAt }: { dateKey: string; nam
     <section aria-live="polite" className="mt-8 flex items-start gap-4 rounded-2xl border border-amber-400/40 bg-gradient-to-r from-amber-400/15 to-emerald-400/10 p-5 sm:p-6">
       <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-400/20 text-amber-300"><Trophy className="size-5" /></div>
       <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-amber-300">Today&apos;s champion</p>
-        <h2 className="mt-1 text-lg font-semibold text-amber-100 sm:text-xl">{name} got BINGO and won today&apos;s round!</h2>
+        <p className="text-xs font-semibold uppercase tracking-widest text-amber-300">Round champion</p>
+        <h2 className="mt-1 text-lg font-semibold text-amber-100 sm:text-xl">{name} got BINGO and won this round!</h2>
         {wonAt !== null && <p className="mt-1 text-sm text-amber-200/75">Won at <time dateTime={new Date(wonAt).toISOString()}>{new Date(wonAt).toISOString().replace("T", " ").replace("Z", " UTC")}</time></p>}
         <p className="mt-2 text-xs text-zinc-400">The winner is locked in. Keep marking your card for fun!</p>
       </div>
@@ -41,8 +41,9 @@ function WinnerBanner({ dateKey, name, winnerId, wonAt }: { dateKey: string; nam
 
 export function RoomDetails({ roomId }: { roomId: Id<"rooms"> }) {
   const { isAuthenticated, isLoading } = useConvexAuth();
-  const clock = useUtcClock();
-  const dateKey = clock?.dateKey;
+  const schedule = useQuery(api.rooms.getRoomSchedule, isAuthenticated ? { roomId } : "skip");
+  const clock = useResetClock(schedule);
+  const dateKey = schedule ? clock?.dateKey : undefined;
   const args = isAuthenticated && dateKey ? { roomId, dateKey } : "skip";
   const state = useQuery(api.rooms.getRoomState, args);
   const card = useQuery(api.rooms.getDailyCard, args);
@@ -57,7 +58,7 @@ export function RoomDetails({ roomId }: { roomId: Id<"rooms"> }) {
       generationError?.key === generationKey || pending.current.has(generationKey)) return;
     pending.current.add(generationKey);
     void generate({ roomId, expectedDateKey: dateKey }).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : "Could not generate your daily card.";
+      const message = error instanceof Error ? error.message : "Could not generate your card.";
       setGenerationError({ key: generationKey, message });
     }).finally(() => pending.current.delete(generationKey));
   }, [card, dateKey, generate, generationError, generationKey, isAuthenticated, roomId, state]);
@@ -72,9 +73,9 @@ export function RoomDetails({ roomId }: { roomId: Id<"rooms"> }) {
   }
 
   async function markCell(index: number) {
-    if (!dateKey) return;
-    if (new Date().toISOString().slice(0, 10) !== dateKey) {
-      toast.error("The UTC day has changed. Please wait for the new card.");
+    if (!dateKey || !schedule) return;
+    if (getRoundWindow(schedule, new Date().getTime()).dateKey !== dateKey) {
+      toast.error("The round has changed. Please wait for the new card.");
       return;
     }
     try {
@@ -96,16 +97,17 @@ export function RoomDetails({ roomId }: { roomId: Id<"rooms"> }) {
         <p role="status" className="mt-8 text-sm text-zinc-400">Loading your room...</p>
       ) : !isAuthenticated ? (
         <p role="alert" className="mt-8 text-sm text-red-400">Your session could not be connected. Please sign out and sign in again.</p>
-      ) : state && clock ? (
+      ) : state && clock && schedule ? (
         <>
           <header className="mt-8 flex flex-wrap items-end justify-between gap-5">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-400">Your daily game</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-400">Your game</p>
               <h1 className="mt-3 break-words text-3xl font-semibold tracking-tight text-white sm:text-4xl">{state.room.name}</h1>
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-zinc-400">
-                <span>{dateFormatter.format(new Date(`${clock.dateKey}T00:00:00Z`))} UTC</span>
+                <span>{new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: schedule.timeZone }).format(clock.now)} · {schedule.timeZone}</span>
                 <span className="inline-flex items-center gap-1.5 text-zinc-500"><Clock3 className="size-4" /> Resets in <span className="font-mono tabular-nums text-zinc-300">{clock.countdown}</span></span>
               </div>
+              <p className="mt-2 text-xs text-zinc-500">Next reset: {new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: schedule.timeZone }).format(clock.nextResetAt)} ({schedule.timeZone})</p>
             </div>
             {inviteCode && <Button onClick={() => copyInvite(inviteCode)} variant="outline" className="h-10 px-4"><Copy className="size-4" /> Copy invite link</Button>}
           </header>
@@ -124,7 +126,7 @@ export function RoomDetails({ roomId }: { roomId: Id<"rooms"> }) {
                   <Button variant="outline" className="mt-4" onClick={() => setGenerationError(null)}>Try again</Button>
                 </div>
               ) : !card ? (
-                <p role="status" className="py-12 text-center text-sm text-zinc-400">Getting today&apos;s card ready...</p>
+                <p role="status" className="py-12 text-center text-sm text-zinc-400">Getting this round&apos;s card ready...</p>
               ) : (
                 <div className={`mx-auto grid w-full max-w-[34rem] ${gridClasses[state.room.gridSize]} gap-1.5 sm:gap-3`}>
                   {card.cells.map((cell) => {

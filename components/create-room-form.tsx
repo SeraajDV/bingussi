@@ -4,23 +4,29 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useConvexAuth, useMutation } from "convex/react";
 import { ArrowRight, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/convex/_generated/api";
-import { draftItems, roomFormSchema, type RoomFormValues } from "@/lib/room-form";
+import { draftItems, formResetSchedule, roomFormSchema, type RoomFormValues } from "@/lib/room-form";
 
 const fieldClass = "w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20";
+const utcOnly = ["UTC"];
+const availableTimeZones = typeof Intl.supportedValuesOf === "function" ? ["UTC", ...Intl.supportedValuesOf("timeZone")] : utcOnly;
+const subscribeTimeZones = () => () => {};
+const getTimeZones = () => availableTimeZones;
+const getServerTimeZones = () => utcOnly;
 
 export function CreateRoomForm() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const createRoom = useMutation(api.rooms.createRoom);
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
+  const timeZones = useSyncExternalStore(subscribeTimeZones, getTimeZones, getServerTimeZones);
   const form = useForm<RoomFormValues>({
     resolver: zodResolver(roomFormSchema),
-    defaultValues: { name: "", gridSize: 5, freeCenter: false, itemPool: [], draftItem: "", bulkItems: "" },
+    defaultValues: { name: "", gridSize: 5, freeCenter: false, itemPool: [], draftItem: "", bulkItems: "", resetFrequency: "daily", resetTime: "00:00", resetTimeZone: "UTC", resetDayOfWeek: 1, resetDayOfMonth: 1 },
     mode: "onChange",
   });
   const { register, control, setValue, handleSubmit, formState: { errors, isSubmitting } } = form;
@@ -30,6 +36,7 @@ export function CreateRoomForm() {
   const freeCenter = useWatch({ control, name: "freeCenter" });
   const item = useWatch({ control, name: "draftItem" });
   const bulkItems = useWatch({ control, name: "bulkItems" });
+  const resetFrequency = useWatch({ control, name: "resetFrequency" });
   const minimum = gridSize * gridSize;
   const itemCount = itemPool.length + draftItems(item, bulkItems).length;
 
@@ -41,8 +48,8 @@ export function CreateRoomForm() {
   async function onSubmit(values: RoomFormValues) {
     setServerError(null);
     try {
-      const { draftItem, bulkItems, itemPool, ...room } = values;
-      const roomId = await createRoom({ ...room, itemPool: [...itemPool, ...draftItems(draftItem, bulkItems)] });
+      const { name, gridSize, freeCenter, draftItem, bulkItems, itemPool } = values;
+      const roomId = await createRoom({ name, gridSize, freeCenter, resetSchedule: formResetSchedule(values), itemPool: [...itemPool, ...draftItems(draftItem, bulkItems)] });
       toast.success("Room created!");
       router.push(`/rooms/${roomId}`);
     } catch (error) {
@@ -78,6 +85,38 @@ export function CreateRoomForm() {
         <span><span className="block text-sm font-medium">Free Center Space</span><span className="mt-1 block text-xs text-zinc-500">Available on odd-sized grids.</span></span>
         <input type="checkbox" disabled={gridSize % 2 === 0} checked={freeCenter} onChange={(event) => setValue("freeCenter", event.target.checked, { shouldDirty: true, shouldValidate: true })} className="size-4 accent-emerald-400" />
       </label>
+
+      <fieldset className="mt-8">
+        <legend className="text-sm font-medium text-zinc-200">Card reset schedule</legend>
+        <p className="mt-2 text-xs leading-5 text-zinc-500">The same schedule applies to everyone in the room and is set when you create it.</p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label className="text-xs font-medium text-zinc-300">Frequency
+            <select {...register("resetFrequency")} className={`${fieldClass} mt-2 h-11`}>
+              <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option>
+            </select>
+          </label>
+          <label className="text-xs font-medium text-zinc-300">Reset time
+            <input type="time" {...register("resetTime")} className={`${fieldClass} mt-2 h-11`} />
+          </label>
+          {resetFrequency === "weekly" && <label className="text-xs font-medium text-zinc-300">Day of week
+            <select {...register("resetDayOfWeek", { valueAsNumber: true })} className={`${fieldClass} mt-2 h-11`}>
+              {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day, i) => <option key={day} value={i + 1}>{day}</option>)}
+            </select>
+          </label>}
+          {resetFrequency === "monthly" && <label className="text-xs font-medium text-zinc-300">Day of month
+            <select {...register("resetDayOfMonth", { valueAsNumber: true })} className={`${fieldClass} mt-2 h-11`}>
+              {Array.from({ length: 31 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
+            </select>
+            <span className="mt-1 block text-zinc-500">Shorter months reset on their last day.</span>
+          </label>}
+          <label className="text-xs font-medium text-zinc-300">Time zone
+            {timeZones.length > 1 ? <select {...register("resetTimeZone")} className={`${fieldClass} mt-2 h-11`}>
+              {timeZones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+            </select> : <input {...register("resetTimeZone")} placeholder="e.g. Africa/Johannesburg" className={`${fieldClass} mt-2 h-11`} />}
+          </label>
+        </div>
+        {errors.resetTime && <p role="alert" className="mt-3 text-sm text-red-400">{errors.resetTime.message}</p>}
+      </fieldset>
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-2">
         <label htmlFor="new-item" className="text-sm font-medium text-zinc-200">Bingo item pool</label>

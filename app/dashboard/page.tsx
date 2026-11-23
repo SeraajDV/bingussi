@@ -11,7 +11,7 @@ export default function DashboardPage() {
         <div>
           <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-400"><span className="size-1.5 rounded-full bg-emerald-400" /> Your space</div>
           <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-5xl">My rooms<span className="text-emerald-400">.</span></h1>
-          <p className="mt-3 text-sm leading-6 text-zinc-400 sm:text-base">Your daily games, all in one place.</p>
+          <p className="mt-3 text-sm leading-6 text-zinc-400 sm:text-base">Your games, all in one place.</p>
         </div>
         <Link href="/rooms/new" className={buttonVariants({ className: "h-10 px-4 font-semibold" })}><Plus className="size-4" /> Create room <ArrowUpRight className="size-4" /></Link>
       </div>

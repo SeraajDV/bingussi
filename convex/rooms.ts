@@ -2,8 +2,9 @@ import { paginationOptsValidator, paginationResultValidator } from "convex/serve
 import { v } from "convex/values";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import schema from "./schema";
+import schema, { resetScheduleValidator } from "./schema";
 import { hasBingo, makeCells } from "./lib/bingo";
+import { DEFAULT_RESET_SCHEDULE, getRoundWindow, validateResetSchedule, type ResetSchedule } from "../lib/reset-schedule";
 
 const gridSize = v.union(v.literal(3), v.literal(4), v.literal(5));
 const roomSummary = v.object({
@@ -12,25 +13,22 @@ const roomSummary = v.object({
   gridSize,
   activeRoundDate: v.string(),
   winnerDate: v.union(v.string(), v.null()),
+  resetSchedule: resetScheduleValidator,
 });
 
-function todayUtc() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function currentDateKey(expectedDateKey?: string) {
-  const dateKey = todayUtc();
+function currentDateKey(schedule: ResetSchedule | undefined, expectedDateKey?: string) {
+  const { dateKey } = getRoundWindow(schedule ?? DEFAULT_RESET_SCHEDULE, Date.now());
   if (expectedDateKey !== undefined && expectedDateKey !== dateKey) {
-    throw new Error("The UTC day has changed or your device clock is incorrect. Refresh and check your clock.");
+    throw new Error("The round has changed or your device clock is incorrect. Refresh and check your clock.");
   }
   return dateKey;
 }
 
 function validateDateKey(dateKey: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error("Invalid UTC date key.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error("Invalid round date key.");
   const date = new Date(`${dateKey}T00:00:00.000Z`);
   if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== dateKey) {
-    throw new Error("Invalid UTC date key.");
+    throw new Error("Invalid round date key.");
   }
 }
 
@@ -109,6 +107,7 @@ export const listMine = query({
           gridSize: room.gridSize,
           activeRoundDate: room.activeRoundDate,
           winnerDate: room.winnerDate ?? null,
+          resetSchedule: room.resetSchedule ?? DEFAULT_RESET_SCHEDULE,
         };
       }),
     );
@@ -117,7 +116,7 @@ export const listMine = query({
 });
 
 export const createRoom = mutation({
-  args: { name: v.string(), gridSize, freeCenter: v.optional(v.boolean()), itemPool: v.array(v.string()) },
+  args: { name: v.string(), gridSize, freeCenter: v.optional(v.boolean()), itemPool: v.array(v.string()), resetSchedule: v.optional(resetScheduleValidator) },
   returns: v.id("rooms"),
   handler: async (ctx, args) => {
     const name = args.name.trim();
@@ -131,6 +130,8 @@ export const createRoom = mutation({
     if (args.freeCenter && args.gridSize % 2 === 0) {
       throw new Error("A free center is only available for odd-sized grids.");
     }
+    const resetSchedule = args.resetSchedule ?? DEFAULT_RESET_SCHEDULE;
+    validateResetSchedule(resetSchedule);
     const userId = await syncUser(ctx);
     const identity = await requireIdentity(ctx);
     const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -147,11 +148,12 @@ export const createRoom = mutation({
     const roomId = await ctx.db.insert("rooms", {
       name,
       gridSize: args.gridSize,
-      activeRoundDate: todayUtc(),
+      activeRoundDate: currentDateKey(resetSchedule),
       creatorId: userId,
       inviteCode,
       freeCenter: args.freeCenter ?? false,
       itemPool,
+      resetSchedule,
     });
     await ctx.db.insert("roomMembers", {
       roomId,
@@ -160,6 +162,15 @@ export const createRoom = mutation({
       joinedAt: Date.now(),
     });
     return roomId;
+  },
+});
+
+export const getRoomSchedule = query({
+  args: { roomId: v.id("rooms") },
+  returns: resetScheduleValidator,
+  handler: async (ctx, { roomId }) => {
+    const { room } = await requireMember(ctx, roomId);
+    return room.resetSchedule ?? DEFAULT_RESET_SCHEDULE;
   },
 });
 
@@ -201,7 +212,7 @@ export const getOrGenerateDailyCard = mutation({
   returns: schema.doc("dailyCards"),
   handler: async (ctx, { roomId, expectedDateKey }) => {
     const { room, member } = await requireMember(ctx, roomId);
-    const dateKey = currentDateKey(expectedDateKey);
+    const dateKey = currentDateKey(room.resetSchedule, expectedDateKey);
     if (!room.itemPool || room.itemPool.length < room.gridSize * room.gridSize) {
       throw new Error("This older room needs an item pool before it can be played.");
     }
@@ -227,7 +238,7 @@ export const toggleCell = mutation({
   returns: schema.doc("dailyCards"),
   handler: async (ctx, { roomId, index, expectedDateKey }) => {
     const { room, member } = await requireMember(ctx, roomId);
-    const dateKey = currentDateKey(expectedDateKey);
+    const dateKey = currentDateKey(room.resetSchedule, expectedDateKey);
     if (!Number.isInteger(index) || index < 0 || index >= room.gridSize * room.gridSize) {
       throw new Error("Invalid cell index.");
     }

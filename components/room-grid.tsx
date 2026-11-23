@@ -5,14 +5,15 @@ import { CalendarDays, Grid2X2, Plus, Trophy } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/convex/_generated/api";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { useTodayUtc } from "@/lib/use-today-utc";
+import { useResetClock } from "@/lib/use-reset-clock";
+import { getRoundWindow } from "@/lib/reset-schedule";
 
 export function RoomGrid() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const { results, status, loadMore } = usePaginatedQuery(api.rooms.listMine, isAuthenticated ? {} : "skip", { initialNumItems: 24 });
-  const today = useTodayUtc();
+  const clock = useResetClock();
 
-  if (isLoading || (isAuthenticated && status === "LoadingFirstPage") || !today) {
+  if (isLoading || (isAuthenticated && status === "LoadingFirstPage") || !clock) {
     return <p role="status" className="mt-8 text-sm text-zinc-500">Loading your rooms...</p>;
   }
   if (!isAuthenticated) {
@@ -23,7 +24,7 @@ export function RoomGrid() {
       <div className="mt-8 flex flex-col items-center rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/40 px-6 py-20 text-center">
         <div className="flex size-14 items-center justify-center rounded-2xl border border-zinc-700 bg-zinc-800 text-emerald-400"><Grid2X2 className="size-6" /></div>
         <h3 className="mt-6 text-lg font-semibold text-zinc-100">Your first room is waiting</h3>
-        <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">Create a space for your people and get your daily game started.</p>
+        <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">Create a space for your people and get your game started.</p>
         <Link href="/rooms/new" className={buttonVariants({ className: "mt-6 h-10 px-4" })}><Plus className="size-4" /> Create a room</Link>
       </div>
     );
@@ -33,8 +34,9 @@ export function RoomGrid() {
     <>
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {results.map((room) => {
-          const crowned = room.winnerDate === today;
-          const isToday = room.activeRoundDate === today;
+          const currentRound = getRoundWindow(room.resetSchedule, clock.now).dateKey;
+          const crowned = room.winnerDate === currentRound;
+          const isCurrent = room.activeRoundDate === currentRound;
           return (
             <article key={room.id} className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5 transition-colors hover:border-zinc-700">
               <div className="flex items-start justify-between gap-3">
@@ -43,8 +45,8 @@ export function RoomGrid() {
               </div>
               <h3 className="mt-6 break-words text-lg font-semibold tracking-tight text-zinc-100">{room.name}</h3>
               <div className="mt-5 space-y-3 border-t border-zinc-800 pt-4 text-sm">
-                <div className="flex items-center gap-2 text-zinc-400"><CalendarDays className="size-4 text-zinc-500" /> Round: {room.activeRoundDate} UTC{!isToday && <span className="text-xs text-zinc-500">(previous)</span>}</div>
-                <div className={`flex items-center gap-2 ${crowned ? "text-amber-400" : "text-zinc-500"}`}><Trophy className="size-4" /> {crowned ? "Today's winner crowned" : "No winner crowned today"}</div>
+                <div className="flex items-center gap-2 text-zinc-400"><CalendarDays className="size-4 text-zinc-500" /> Round: {room.activeRoundDate} {room.resetSchedule.timeZone}{!isCurrent && <span className="text-xs text-zinc-500">(previous)</span>}</div>
+                <div className={`flex items-center gap-2 ${crowned ? "text-amber-400" : "text-zinc-500"}`}><Trophy className="size-4" /> {crowned ? "Round winner crowned" : "No winner this round"}</div>
               </div>
               <Link href={`/rooms/${room.id}`} className="mt-5 inline-flex text-sm font-medium text-emerald-400 hover:text-emerald-300">Open room →</Link>
             </article>

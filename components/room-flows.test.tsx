@@ -39,6 +39,43 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("room creation", () => {
+  it("submits a creator-selected weekly schedule and time zone", async () => {
+    const user = userEvent.setup();
+    mocks.mutation.mockResolvedValue("room123");
+    render(<CreateRoomForm />);
+    await user.type(screen.getByLabelText("Room name"), "Weekly game");
+    await user.click(screen.getByRole("radio", { name: /3 × 3/i }));
+    await user.selectOptions(screen.getByLabelText("Frequency"), "weekly");
+    await user.selectOptions(screen.getByLabelText("Day of week"), "5");
+    await user.clear(screen.getByLabelText("Reset time"));
+    await user.type(screen.getByLabelText("Reset time"), "08:30");
+    await user.selectOptions(screen.getByLabelText("Time zone"), "Africa/Johannesburg");
+    await user.click(screen.getByText("Bulk paste items"));
+    await user.click(screen.getByLabelText("One item per line"));
+    await user.paste(Array.from({ length: 9 }, (_, i) => `Item ${i + 1}`).join("\n"));
+    await user.click(screen.getByRole("button", { name: /create room/i }));
+    await waitFor(() => expect(mocks.mutation).toHaveBeenCalledWith(expect.objectContaining({
+      resetSchedule: { frequency: "weekly", time: "08:30", timeZone: "Africa/Johannesburg", dayOfWeek: 5 },
+    })));
+  });
+
+  it("submits a monthly reset day", async () => {
+    const user = userEvent.setup();
+    mocks.mutation.mockResolvedValue("room123");
+    render(<CreateRoomForm />);
+    await user.type(screen.getByLabelText("Room name"), "Monthly game");
+    await user.click(screen.getByRole("radio", { name: /3 × 3/i }));
+    await user.selectOptions(screen.getByLabelText("Frequency"), "monthly");
+    await user.selectOptions(screen.getByLabelText(/Day of month/), "31");
+    await user.click(screen.getByText("Bulk paste items"));
+    await user.click(screen.getByLabelText("One item per line"));
+    await user.paste(Array.from({ length: 9 }, (_, i) => `Item ${i + 1}`).join("\n"));
+    await user.click(screen.getByRole("button", { name: /create room/i }));
+    await waitFor(() => expect(mocks.mutation).toHaveBeenCalledWith(expect.objectContaining({
+      resetSchedule: { frequency: "monthly", time: "00:00", timeZone: "UTC", dayOfMonth: 31 },
+    })));
+  });
+
   it("enables a 5×5 room as soon as 25 pasted items are present", async () => {
     const user = userEvent.setup();
     mocks.mutation.mockResolvedValue("room123");
@@ -80,6 +117,7 @@ describe("room creation", () => {
       name: "Standup",
       gridSize: 3,
       freeCenter: false,
+      resetSchedule: { frequency: "daily", time: "00:00", timeZone: "UTC" },
       itemPool: ["Final item", ...Array.from({ length: 8 }, (_, i) => `Item ${i + 1}`)],
     }));
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/rooms/room123"));
@@ -178,7 +216,7 @@ describe("room invitations", () => {
 
   it("shares the room's invitation link", async () => {
     const user = userEvent.setup();
-    mocks.query.mockImplementation((name: string) => name === "rooms:getRoomState" ? {
+    mocks.query.mockImplementation((name: string) => name === "rooms:getRoomSchedule" ? { frequency: "daily", time: "00:00", timeZone: "UTC" } : name === "rooms:getRoomState" ? {
       room: { name: "Team", gridSize: 3, inviteCode: "ABC234" },
       members: [],
       round: null,
