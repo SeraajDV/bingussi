@@ -9,8 +9,10 @@ A dark-mode-first starting point for daily multiplayer bingo, built with Next.js
 3. Configure the Clerk JWT template named `convex` and set `CLERK_JWT_ISSUER_DOMAIN` in the Convex deployment. See the [Convex Clerk guide](https://docs.convex.dev/auth/clerk).
 4. Run `npm run dev`. The Convex development command syncs the schema and functions before starting Next.js.
 
-Signed-in users can create rooms and see rooms associated with their authenticated identity on the dashboard. Room creation records the initial round date in UTC. The dashboard identifies an older round as previous and only reports a winner when the stored winner date matches the current UTC day.
+Signed-in users can create rooms with an item pool and see their rooms on the dashboard. The Convex room API supports joining with an invite code, generating daily cards, marking cells, and tracking each room's first daily winner. Bingo uses UTC calendar days. The free center is automatically marked and cannot be toggled.
 
-This foundation does not yet include invitations, playable cards, automatic daily round creation, or winner selection. The interactive card on the landing page is a local preview only.
+For reactive reads, `rooms.getDailyCard` and `rooms.getRoomState` take a `dateKey` in UTC `YYYY-MM-DD` format. Clients must update it at UTC midnight; mutations use the server's current UTC date. Call `rooms.getOrGenerateDailyCard` to create today's card before toggling cells. User profiles are synchronized from available Clerk JWT claims when users create or join rooms or generate a card; configure the JWT template to include name, picture, and email if those details are needed.
 
-Run `npm run typecheck` and `npm run lint` to check the project.
+Existing rooms created before item pools and invites were introduced remain visible on the dashboard but cannot be played until their missing configuration is migrated. Existing memberships are linked to user profiles when those members generate a card. The dashboard does not yet provide invitation, room, or playable card screens; the interactive card on the landing page is a local preview only.
+
+Run `npm run typecheck`, `npm run lint`, and `npm test` to check the project.
