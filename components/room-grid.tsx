@@ -16,7 +16,7 @@ export function RoomGrid() {
     return <p role="status" className="mt-8 text-sm text-zinc-500">Loading your rooms...</p>;
   }
   if (!isAuthenticated) {
-    return <p role="alert" className="mt-8 text-sm text-zinc-400">Your session could not be connected to BingoSync. Please sign out and sign in again.</p>;
+    return <p role="alert" className="mt-8 text-sm text-zinc-400">Your session could not be connected to Bingussi. Please sign out and sign in again.</p>;
   }
   if (results.length === 0) {
     return (

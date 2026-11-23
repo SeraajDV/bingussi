@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BingoSync",
+  title: "Bingussi",
   description: "A little daily competition, a lot more connection.",
 };
 

@@ -1,4 +1,4 @@
-# BingoSync
+# Bingussi
 
 A dark-mode-first starting point for daily multiplayer bingo, built with Next.js, Clerk, and Convex.
 

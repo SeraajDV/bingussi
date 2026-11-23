@@ -1,4 +1,4 @@
-# Project Context & Coding Standards — BingoSync
+# Project Context & Coding Standards — Bingussi
 
 ## Tech Stack
 - **Framework:** Next.js (App Router) with React 19 and strict TypeScript.
