@@ -17,17 +17,23 @@ export function makeCells(
   });
 }
 
-export function hasBingo(cells: Cell[], gridSize: number): boolean {
-  const marked = (row: number, column: number) =>
-    cells[row * gridSize + column]?.isMarked === true;
+export function winningCellIndexes(cells: Cell[], gridSize: number): Set<number> {
+  const lines: number[][] = [];
   for (let i = 0; i < gridSize; i++) {
-    if (
-      Array.from({ length: gridSize }, (_, j) => marked(i, j)).every(Boolean) ||
-      Array.from({ length: gridSize }, (_, j) => marked(j, i)).every(Boolean)
-    ) return true;
+    lines.push(Array.from({ length: gridSize }, (_, j) => i * gridSize + j));
+    lines.push(Array.from({ length: gridSize }, (_, j) => j * gridSize + i));
   }
-  return (
-    Array.from({ length: gridSize }, (_, i) => marked(i, i)).every(Boolean) ||
-    Array.from({ length: gridSize }, (_, i) => marked(i, gridSize - 1 - i)).every(Boolean)
-  );
+  lines.push(Array.from({ length: gridSize }, (_, i) => i * gridSize + i));
+  lines.push(Array.from({ length: gridSize }, (_, i) => i * gridSize + gridSize - 1 - i));
+  const winning = new Set<number>();
+  for (const line of lines) {
+    if (line.every((index) => cells[index]?.isMarked === true)) {
+      for (const index of line) winning.add(index);
+    }
+  }
+  return winning;
+}
+
+export function hasBingo(cells: Cell[], gridSize: number): boolean {
+  return winningCellIndexes(cells, gridSize).size > 0;
 }

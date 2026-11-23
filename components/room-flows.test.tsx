@@ -7,6 +7,7 @@ import { JoinRoomForm } from "./join-room-form";
 import { JoinInvite } from "./join-invite";
 import { RoomDetails } from "./room-details";
 import type { Id } from "@/convex/_generated/dataModel";
+import { getFunctionName } from "convex/server";
 
 const mocks = vi.hoisted(() => ({
   mutation: vi.fn(),
@@ -19,8 +20,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("convex/react", () => ({
   useConvexAuth: () => ({ isAuthenticated: true, isLoading: false }),
-  useMutation: () => mocks.mutation,
-  useQuery: () => mocks.query(),
+  useMutation: () => Object.assign(mocks.mutation, { withOptimisticUpdate: () => mocks.mutation }),
+  useQuery: (reference: Parameters<typeof getFunctionName>[0]) => mocks.query(getFunctionName(reference)),
 }));
 vi.mock("next/navigation", () => {
   const router = { push: mocks.push, replace: mocks.replace };
@@ -120,11 +121,11 @@ describe("room invitations", () => {
 
   it("shares the room's invitation link", async () => {
     const user = userEvent.setup();
-    mocks.query.mockReturnValue({
+    mocks.query.mockImplementation((name: string) => name === "rooms:getRoomState" ? {
       room: { name: "Team", gridSize: 3, inviteCode: "ABC234" },
       members: [],
       round: null,
-    });
+    } : undefined);
     const copy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     render(<RoomDetails roomId={"room123" as Id<"rooms">} />);
     await user.click(await screen.findByRole("button", { name: /copy invite link/i }));

@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
-import { hasBingo, makeCells } from "./lib/bingo";
+import { hasBingo, makeCells, winningCellIndexes } from "./lib/bingo";
 
 const modules = import.meta.glob("./**/*.ts");
 const pool = Array.from({ length: 9 }, (_, i) => `Item ${i + 1}`);
@@ -24,7 +24,9 @@ describe("bingo helpers", () => {
     ];
     expect(hasBingo(empty, size)).toBe(false);
     for (const pattern of patterns) {
-      expect(hasBingo(empty.map((cell) => ({ ...cell, isMarked: pattern.includes(cell.index) })), size)).toBe(true);
+      const marked = empty.map((cell) => ({ ...cell, isMarked: pattern.includes(cell.index) }));
+      expect(hasBingo(marked, size)).toBe(true);
+      expect([...winningCellIndexes(marked, size)].sort((a, b) => a - b)).toEqual([...pattern].sort((a, b) => a - b));
     }
   });
 });
@@ -92,6 +94,8 @@ describe("rooms", () => {
     expect((await alice.mutation(api.rooms.toggleCell, { roomId, index: 2 })).hasBingo).toBe(false);
     expect((await bob.query(api.rooms.getRoomState, { roomId, dateKey })).round?.winner?.name).toBe("Alice");
     vi.setSystemTime(new Date("2026-11-24T00:00:00Z"));
+    await expect(alice.mutation(api.rooms.toggleCell, { roomId, index: 0, expectedDateKey: dateKey })).rejects.toThrow("UTC day has changed");
+    await expect(alice.mutation(api.rooms.getOrGenerateDailyCard, { roomId, expectedDateKey: dateKey })).rejects.toThrow("UTC day has changed");
     const nextCard = await alice.mutation(api.rooms.getOrGenerateDailyCard, { roomId });
     expect(nextCard._id).not.toBe(aliceCard._id);
     expect(nextCard.dateKey).toBe("2026-11-24");

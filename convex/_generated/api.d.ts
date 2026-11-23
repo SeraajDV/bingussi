@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as lib_bingo from "../lib/bingo.js";
 import type * as myFunctions from "../myFunctions.js";
 import type * as rooms from "../rooms.js";
 
@@ -18,6 +19,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "lib/bingo": typeof lib_bingo;
   myFunctions: typeof myFunctions;
   rooms: typeof rooms;
 }>;

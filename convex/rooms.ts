@@ -18,6 +18,14 @@ function todayUtc() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function currentDateKey(expectedDateKey?: string) {
+  const dateKey = todayUtc();
+  if (expectedDateKey !== undefined && expectedDateKey !== dateKey) {
+    throw new Error("The UTC day has changed or your device clock is incorrect. Refresh and check your clock.");
+  }
+  return dateKey;
+}
+
 function validateDateKey(dateKey: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error("Invalid UTC date key.");
   const date = new Date(`${dateKey}T00:00:00.000Z`);
@@ -189,16 +197,16 @@ export const getDailyCard = query({
 });
 
 export const getOrGenerateDailyCard = mutation({
-  args: { roomId: v.id("rooms") },
+  args: { roomId: v.id("rooms"), expectedDateKey: v.optional(v.string()) },
   returns: schema.doc("dailyCards"),
-  handler: async (ctx, { roomId }) => {
+  handler: async (ctx, { roomId, expectedDateKey }) => {
     const { room, member } = await requireMember(ctx, roomId);
+    const dateKey = currentDateKey(expectedDateKey);
     if (!room.itemPool || room.itemPool.length < room.gridSize * room.gridSize) {
       throw new Error("This older room needs an item pool before it can be played.");
     }
     const userId = await syncUser(ctx);
     if (!member.userId) await ctx.db.patch("roomMembers", member._id, { userId, joinedAt: member.joinedAt ?? Date.now() });
-    const dateKey = todayUtc();
     const existing = await getCard(ctx, roomId, userId, dateKey);
     if (existing) return existing;
     const cardId = await ctx.db.insert("dailyCards", {
@@ -215,10 +223,11 @@ export const getOrGenerateDailyCard = mutation({
 });
 
 export const toggleCell = mutation({
-  args: { roomId: v.id("rooms"), index: v.number() },
+  args: { roomId: v.id("rooms"), index: v.number(), expectedDateKey: v.optional(v.string()) },
   returns: schema.doc("dailyCards"),
-  handler: async (ctx, { roomId, index }) => {
+  handler: async (ctx, { roomId, index, expectedDateKey }) => {
     const { room, member } = await requireMember(ctx, roomId);
+    const dateKey = currentDateKey(expectedDateKey);
     if (!Number.isInteger(index) || index < 0 || index >= room.gridSize * room.gridSize) {
       throw new Error("Invalid cell index.");
     }
@@ -226,7 +235,6 @@ export const toggleCell = mutation({
       throw new Error("The free center cannot be unmarked.");
     }
     if (!member.userId) throw new Error("Generate your daily card first.");
-    const dateKey = todayUtc();
     const card = await getCard(ctx, roomId, member.userId, dateKey);
     if (!card) throw new Error("Generate your daily card first.");
     const cells = card.cells.map((cell) => cell.index === index ? { ...cell, isMarked: !cell.isMarked } : cell);
