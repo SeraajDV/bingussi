@@ -126,7 +126,7 @@ export function RoomDetails({ roomId }: { roomId: Id<"rooms"> }) {
               ) : !card ? (
                 <p role="status" className="py-12 text-center text-sm text-zinc-400">Getting today&apos;s card ready...</p>
               ) : (
-                <div className={`grid ${gridClasses[state.room.gridSize]} gap-1.5 sm:gap-3`}>
+                <div className={`mx-auto grid w-full max-w-[40rem] ${gridClasses[state.room.gridSize]} gap-1.5 sm:gap-3`}>
                   {card.cells.map((cell) => {
                     const isFree = !!state.room.freeCenter && cell.index === Math.floor(card.cells.length / 2);
                     const isWinning = winning.has(cell.index);
