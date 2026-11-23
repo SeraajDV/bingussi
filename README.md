@@ -13,6 +13,8 @@ Signed-in users can create rooms with an item pool and see their rooms on the da
 
 For reactive reads, `rooms.getDailyCard` and `rooms.getRoomState` take a `dateKey` in UTC `YYYY-MM-DD` format. Clients must update it at UTC midnight; mutations use the server's current UTC date. Call `rooms.getOrGenerateDailyCard` to create today's card before toggling cells. User profiles are synchronized from available Clerk JWT claims when users create or join rooms or generate a card; configure the JWT template to include name, picture, and email if those details are needed.
 
-Existing rooms created before item pools and invites were introduced remain visible on the dashboard but cannot be played until their missing configuration is migrated. Existing memberships are linked to user profiles when those members generate a card. The dashboard does not yet provide invitation, room, or playable card screens; the interactive card on the landing page is a local preview only.
+Create rooms at `/rooms/new`, add individual items or bulk-paste a list, and share the invite link or code from the room page. Signed-in users can join from the dashboard or an invite link; sign-in is required before joining. The room page shows today's member progress and winner, but playable cards are not yet available in the UI. The interactive card on the landing page is a local preview only.
+
+Existing rooms created before item pools and invites were introduced remain visible on the dashboard but cannot be played or invited to until their missing configuration is migrated. Existing memberships are linked to user profiles when those members generate a card.
 
 Run `npm run typecheck`, `npm run lint`, and `npm test` to check the project.

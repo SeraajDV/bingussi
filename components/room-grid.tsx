@@ -3,25 +3,9 @@
 import { useConvexAuth, usePaginatedQuery } from "convex/react";
 import { CalendarDays, Grid2X2, Plus, Trophy } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { Button, buttonVariants } from "@/components/ui/button";
-
-function useTodayUtc() {
-  const [today, setToday] = useState<string | null>(null);
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    function update() {
-      const now = new Date();
-      setToday(now.toISOString().slice(0, 10));
-      const nextDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-      timer = setTimeout(update, nextDay - now.getTime() + 50);
-    }
-    update();
-    return () => clearTimeout(timer);
-  }, []);
-  return today;
-}
+import { useTodayUtc } from "@/lib/use-today-utc";
 
 export function RoomGrid() {
   const { isAuthenticated, isLoading } = useConvexAuth();
@@ -40,7 +24,7 @@ export function RoomGrid() {
         <div className="flex size-14 items-center justify-center rounded-2xl border border-zinc-700 bg-zinc-800 text-emerald-400"><Grid2X2 className="size-6" /></div>
         <h3 className="mt-6 text-lg font-semibold text-zinc-100">Your first room is waiting</h3>
         <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">Create a space for your people and get your daily game started.</p>
-        <Link href="/dashboard/create" className={buttonVariants({ className: "mt-6 h-10 px-4" })}><Plus className="size-4" /> Create a room</Link>
+        <Link href="/rooms/new" className={buttonVariants({ className: "mt-6 h-10 px-4" })}><Plus className="size-4" /> Create a room</Link>
       </div>
     );
   }
@@ -62,6 +46,7 @@ export function RoomGrid() {
                 <div className="flex items-center gap-2 text-zinc-400"><CalendarDays className="size-4 text-zinc-500" /> Round: {room.activeRoundDate} UTC{!isToday && <span className="text-xs text-zinc-500">(previous)</span>}</div>
                 <div className={`flex items-center gap-2 ${crowned ? "text-amber-400" : "text-zinc-500"}`}><Trophy className="size-4" /> {crowned ? "Today's winner crowned" : "No winner crowned today"}</div>
               </div>
+              <Link href={`/rooms/${room.id}`} className="mt-5 inline-flex text-sm font-medium text-emerald-400 hover:text-emerald-300">Open room →</Link>
             </article>
           );
         })}

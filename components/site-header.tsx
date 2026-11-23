@@ -14,7 +14,7 @@ export function SiteHeader() {
         <div className="flex items-center gap-3 sm:gap-6">
           <Show when="signed-in">
             <Link href="/dashboard" className="text-sm font-medium text-zinc-400 transition-colors hover:text-white">My Rooms</Link>
-            <Link href="/dashboard/create" className={buttonVariants({ className: "h-9 px-3 sm:px-4" })}>
+            <Link href="/rooms/new" className={buttonVariants({ className: "h-9 px-3 sm:px-4" })}>
               <Plus className="size-4" /><span className="hidden sm:inline">Create Room</span><span className="sm:hidden">Create</span>
             </Link>
             <UserButton />

@@ -1,71 +1,117 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useConvexAuth, useMutation } from "convex/react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
-import { api } from "@/convex/_generated/api";
+import { useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { api } from "@/convex/_generated/api";
+import { roomFormSchema, type RoomFormValues } from "@/lib/room-form";
 
-type GridSize = 3 | 4 | 5;
+const fieldClass = "w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20";
 
 export function CreateRoomForm() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const createRoom = useMutation(api.rooms.createRoom);
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [gridSize, setGridSize] = useState<GridSize>(5);
-  const [items, setItems] = useState("");
-  const [freeCenter, setFreeCenter] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [item, setItem] = useState("");
+  const [bulkItems, setBulkItems] = useState("");
+  const [serverError, setServerError] = useState<string | null>(null);
+  const form = useForm<RoomFormValues>({
+    resolver: zodResolver(roomFormSchema),
+    defaultValues: { name: "", gridSize: 5, freeCenter: false, itemPool: [] },
+    mode: "onChange",
+  });
+  const { register, control, setValue, handleSubmit, formState: { errors, isSubmitting } } = form;
+  const gridSize = useWatch({ control, name: "gridSize" });
+  const itemPool = useWatch({ control, name: "itemPool" });
+  const name = useWatch({ control, name: "name" });
+  const freeCenter = useWatch({ control, name: "freeCenter" });
+  const minimum = gridSize * gridSize;
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting) return;
-    setError(null);
-    setSubmitting(true);
+  function addItems(items: string[]) {
+    const cleaned = items.map((value) => value.trim()).filter(Boolean);
+    if (cleaned.length) setValue("itemPool", [...itemPool, ...cleaned], { shouldDirty: true, shouldValidate: true });
+  }
+
+  async function onSubmit(values: RoomFormValues) {
+    setServerError(null);
     try {
-      await createRoom({
-        name,
-        gridSize,
-        freeCenter: gridSize % 2 === 1 && freeCenter,
-        itemPool: items.split("\n").map((item) => item.trim()).filter(Boolean),
-      });
-      router.push("/dashboard");
+      const roomId = await createRoom(values);
+      toast.success("Room created!");
+      router.push(`/rooms/${roomId}`);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Could not create your room. Please try again.");
-      setSubmitting(false);
+      const message = error instanceof Error ? error.message : "Could not create your room. Please try again.";
+      setServerError(message);
+      toast.error(message);
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-8 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6 sm:p-8">
+    <form onSubmit={handleSubmit(onSubmit)} className="mt-8 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6 sm:p-8">
       <label htmlFor="room-name" className="text-sm font-medium text-zinc-200">Room name</label>
-      <input id="room-name" required maxLength={60} value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. The Daily Good" className="mt-2 h-11 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20" />
+      <input id="room-name" maxLength={60} placeholder="e.g. Daily Standup Bingo" className={`${fieldClass} mt-2 h-11`} aria-invalid={!!errors.name} aria-describedby={errors.name ? "room-name-error" : undefined} {...register("name")} />
+      {errors.name && <p id="room-name-error" role="alert" className="mt-2 text-sm text-red-400">{errors.name.message}</p>}
+
       <fieldset className="mt-7">
         <legend className="text-sm font-medium text-zinc-200">Grid size</legend>
         <div className="mt-2 grid grid-cols-3 gap-3">
           {([3, 4, 5] as const).map((size) => (
-            <label key={size} className={`cursor-pointer rounded-lg border px-3 py-3 text-center text-sm font-medium transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-emerald-400 ${gridSize === size ? "border-emerald-400 bg-emerald-400/10 text-emerald-300" : "border-zinc-700 text-zinc-400 hover:border-zinc-500"}`}>
-              <input type="radio" name="gridSize" value={size} checked={gridSize === size} onChange={() => setGridSize(size)} className="sr-only" />
-              {size} × {size}
+            <label key={size} className={`cursor-pointer rounded-xl border px-2 py-4 text-center transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-emerald-400 ${gridSize === size ? "border-emerald-400 bg-emerald-400/10 text-emerald-300" : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`}>
+              <input type="radio" name="gridSize" value={size} checked={gridSize === size} onChange={() => {
+                setValue("gridSize", size, { shouldDirty: true, shouldValidate: true });
+                if (size % 2 === 0) setValue("freeCenter", false, { shouldDirty: true, shouldValidate: true });
+              }} className="sr-only" />
+              <span className="block text-base font-semibold">{size} × {size}</span>
+              <span className="mt-1 block text-xs text-zinc-400">{size * size} items</span>
             </label>
           ))}
         </div>
       </fieldset>
-      <label htmlFor="room-items" className="mt-7 block text-sm font-medium text-zinc-200">Bingo items</label>
-      <textarea id="room-items" required value={items} onChange={(event) => setItems(event.target.value)} rows={6} placeholder="One item per line" className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20" />
-      <p className="mt-2 text-xs text-zinc-400">Add at least {gridSize * gridSize} items, one per line.</p>
-      {gridSize % 2 === 1 && (
-        <label className="mt-5 flex items-center gap-2 text-sm text-zinc-200">
-          <input type="checkbox" checked={freeCenter} onChange={(event) => setFreeCenter(event.target.checked)} />
-          Use a free center space
-        </label>
+
+      <label className={`mt-6 flex items-center justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-950/50 p-4 ${gridSize % 2 === 0 ? "text-zinc-500" : "text-zinc-200"}`}>
+        <span><span className="block text-sm font-medium">Free Center Space</span><span className="mt-1 block text-xs text-zinc-500">Available on odd-sized grids.</span></span>
+        <input type="checkbox" disabled={gridSize % 2 === 0} checked={freeCenter} onChange={(event) => setValue("freeCenter", event.target.checked, { shouldDirty: true, shouldValidate: true })} className="size-4 accent-emerald-400" />
+      </label>
+
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-2">
+        <label htmlFor="new-item" className="text-sm font-medium text-zinc-200">Bingo item pool</label>
+        <span aria-live="polite" className={`rounded-full border px-2.5 py-1 text-xs font-medium ${itemPool.length >= minimum ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : "border-zinc-700 bg-zinc-800 text-zinc-300"}`}>{itemPool.length} / {minimum} items needed</span>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-zinc-500">Add one at a time or paste a list. Your daily cards are shuffled from this pool.</p>
+      <div className="mt-3 flex gap-2">
+        <input id="new-item" value={item} onChange={(event) => setItem(event.target.value)} onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            addItems([item]);
+            setItem("");
+          }
+        }} placeholder="Type an item and press Enter" className={`${fieldClass} h-11 min-w-0`} />
+        <Button type="button" variant="outline" className="h-11 px-4" disabled={!item.trim()} onClick={() => { addItems([item]); setItem(""); }}><Plus className="size-4" /> Add</Button>
+      </div>
+      {itemPool.length > 0 && (
+        <ul aria-label="Bingo items" className="mt-4 flex max-h-56 flex-wrap gap-2 overflow-y-auto">
+          {itemPool.map((value, index) => (
+            <li key={`${index}-${value}`} className="flex max-w-full items-center gap-1 rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-sm text-zinc-200">
+              <span className="break-all">{value}</span>
+              <button type="button" aria-label={`Remove ${value}, item ${index + 1}`} className="rounded-full p-1 text-zinc-400 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setValue("itemPool", itemPool.filter((_, i) => i !== index), { shouldDirty: true, shouldValidate: true })}><X className="size-3.5" /></button>
+            </li>
+          ))}
+        </ul>
       )}
-      {error && <p role="alert" className="mt-5 text-sm text-red-400">{error}</p>}
+      <details className="mt-5 rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
+        <summary className="cursor-pointer text-sm font-medium text-zinc-300">Bulk paste items</summary>
+        <label htmlFor="bulk-items" className="mt-4 block text-xs text-zinc-400">One item per line</label>
+        <textarea id="bulk-items" rows={5} value={bulkItems} onChange={(event) => setBulkItems(event.target.value)} placeholder={"First item\nSecond item\nThird item"} className={`${fieldClass} mt-2 py-3`} />
+        <Button type="button" variant="outline" className="mt-3" disabled={!bulkItems.trim()} onClick={() => { addItems(bulkItems.split(/\r?\n/)); setBulkItems(""); }}>Add pasted items</Button>
+      </details>
+      {errors.itemPool && <p role="alert" className="mt-3 text-sm text-red-400">{errors.itemPool.message}</p>}
+      {serverError && <p role="alert" className="mt-5 text-sm text-red-400">{serverError}</p>}
       {!isLoading && !isAuthenticated && <p role="alert" className="mt-5 text-sm text-red-400">Your session could not be connected. Please sign out and sign in again.</p>}
-      <Button type="submit" disabled={!isAuthenticated || submitting || !name.trim()} className="mt-8 h-11 w-full font-semibold">{submitting ? "Creating room..." : "Create room"} <ArrowRight className="size-4" /></Button>
+      <Button type="submit" disabled={!isAuthenticated || isSubmitting || !name.trim() || itemPool.length < minimum} className="mt-8 h-11 w-full font-semibold">{isSubmitting ? "Creating room..." : "Create room"} <ArrowRight className="size-4" /></Button>
     </form>
   );
 }
