@@ -42,3 +42,8 @@ next-env.d.ts
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# local AI agent skills and configuration
+/.agents/
+/.claude/
+/.github/
