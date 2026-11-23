@@ -16,10 +16,11 @@ const mocks = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
   query: vi.fn(),
+  auth: { isAuthenticated: true, isLoading: false },
 }));
 
 vi.mock("convex/react", () => ({
-  useConvexAuth: () => ({ isAuthenticated: true, isLoading: false }),
+  useConvexAuth: () => mocks.auth,
   useMutation: () => Object.assign(mocks.mutation, { withOptimisticUpdate: () => mocks.mutation }),
   useQuery: (reference: Parameters<typeof getFunctionName>[0]) => mocks.query(getFunctionName(reference)),
 }));
@@ -33,10 +34,66 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.mutation.mockReset();
   mocks.query.mockReset();
+  mocks.auth = { isAuthenticated: true, isLoading: false };
 });
 afterEach(cleanup);
 
 describe("room creation", () => {
+  it("enables a 5×5 room as soon as 25 pasted items are present", async () => {
+    const user = userEvent.setup();
+    mocks.mutation.mockResolvedValue("room123");
+    render(<CreateRoomForm />);
+    await user.type(screen.getByLabelText("Room name"), "Daily");
+    await user.click(screen.getByText("Bulk paste items"));
+    const bulk = screen.getByLabelText("One item per line");
+    await user.click(bulk);
+    await user.paste(Array.from({ length: 24 }, (_, i) => `Item ${i + 1}`).join("\n"));
+    const submit = screen.getByRole("button", { name: /create room/i });
+    expect(screen.getByText("24 / 25 items needed")).toBeTruthy();
+    expect(submit.hasAttribute("disabled")).toBe(true);
+    await user.paste("\nItem 25");
+    expect(screen.getByText("25 / 25 items needed")).toBeTruthy();
+    expect(submit.hasAttribute("disabled")).toBe(false);
+    await user.click(submit);
+    await waitFor(() => expect(mocks.mutation).toHaveBeenCalledWith(expect.objectContaining({
+      gridSize: 5,
+      itemPool: Array.from({ length: 25 }, (_, i) => `Item ${i + 1}`),
+    })));
+  });
+
+  it("counts and submits uncommitted single and bulk items without duplication", async () => {
+    const user = userEvent.setup();
+    mocks.mutation.mockResolvedValue("room123");
+    render(<CreateRoomForm />);
+    await user.type(screen.getByLabelText("Room name"), "Standup");
+    await user.click(screen.getByRole("radio", { name: /3 × 3/i }));
+    await user.click(screen.getByText("Bulk paste items"));
+    await user.type(screen.getByLabelText("One item per line"), Array.from({ length: 8 }, (_, i) => `Item ${i + 1}`).join("\n"));
+    expect(screen.getByText("8 / 9 items needed")).toBeTruthy();
+    const submit = screen.getByRole("button", { name: /create room/i });
+    expect(submit.hasAttribute("disabled")).toBe(true);
+    await user.type(screen.getByLabelText("Bingo item pool"), "Final item");
+    expect(screen.getByText("9 / 9 items needed")).toBeTruthy();
+    expect(submit.hasAttribute("disabled")).toBe(false);
+    await user.click(submit);
+    await waitFor(() => expect(mocks.mutation).toHaveBeenCalledWith({
+      name: "Standup",
+      gridSize: 3,
+      freeCenter: false,
+      itemPool: ["Final item", ...Array.from({ length: 8 }, (_, i) => `Item ${i + 1}`)],
+    }));
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/rooms/room123"));
+  });
+
+  it("explains when authentication is still connecting or unavailable", async () => {
+    mocks.auth = { isAuthenticated: false, isLoading: true };
+    const { rerender } = render(<CreateRoomForm />);
+    expect(screen.getByRole("status").textContent).toContain("Connecting your session");
+    mocks.auth = { isAuthenticated: false, isLoading: false };
+    rerender(<CreateRoomForm />);
+    expect(screen.getByRole("alert").textContent).toContain("could not connect to Convex");
+  });
+
   it("adds and removes items, enforces the grid minimum, and creates the room", async () => {
     const user = userEvent.setup();
     mocks.mutation.mockResolvedValue("room123");

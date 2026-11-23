@@ -9,7 +9,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/convex/_generated/api";
-import { roomFormSchema, type RoomFormValues } from "@/lib/room-form";
+import { draftItems, roomFormSchema, type RoomFormValues } from "@/lib/room-form";
 
 const fieldClass = "w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20";
 
@@ -17,12 +17,10 @@ export function CreateRoomForm() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const createRoom = useMutation(api.rooms.createRoom);
   const router = useRouter();
-  const [item, setItem] = useState("");
-  const [bulkItems, setBulkItems] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
   const form = useForm<RoomFormValues>({
     resolver: zodResolver(roomFormSchema),
-    defaultValues: { name: "", gridSize: 5, freeCenter: false, itemPool: [] },
+    defaultValues: { name: "", gridSize: 5, freeCenter: false, itemPool: [], draftItem: "", bulkItems: "" },
     mode: "onChange",
   });
   const { register, control, setValue, handleSubmit, formState: { errors, isSubmitting } } = form;
@@ -30,7 +28,10 @@ export function CreateRoomForm() {
   const itemPool = useWatch({ control, name: "itemPool" });
   const name = useWatch({ control, name: "name" });
   const freeCenter = useWatch({ control, name: "freeCenter" });
+  const item = useWatch({ control, name: "draftItem" });
+  const bulkItems = useWatch({ control, name: "bulkItems" });
   const minimum = gridSize * gridSize;
+  const itemCount = itemPool.length + draftItems(item, bulkItems).length;
 
   function addItems(items: string[]) {
     const cleaned = items.map((value) => value.trim()).filter(Boolean);
@@ -40,7 +41,8 @@ export function CreateRoomForm() {
   async function onSubmit(values: RoomFormValues) {
     setServerError(null);
     try {
-      const roomId = await createRoom(values);
+      const { draftItem, bulkItems, itemPool, ...room } = values;
+      const roomId = await createRoom({ ...room, itemPool: [...itemPool, ...draftItems(draftItem, bulkItems)] });
       toast.success("Room created!");
       router.push(`/rooms/${roomId}`);
     } catch (error) {
@@ -79,18 +81,18 @@ export function CreateRoomForm() {
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-2">
         <label htmlFor="new-item" className="text-sm font-medium text-zinc-200">Bingo item pool</label>
-        <span aria-live="polite" className={`rounded-full border px-2.5 py-1 text-xs font-medium ${itemPool.length >= minimum ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : "border-zinc-700 bg-zinc-800 text-zinc-300"}`}>{itemPool.length} / {minimum} items needed</span>
+        <span aria-live="polite" className={`rounded-full border px-2.5 py-1 text-xs font-medium ${itemCount >= minimum ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : "border-zinc-700 bg-zinc-800 text-zinc-300"}`}>{itemCount} / {minimum} items needed</span>
       </div>
-      <p className="mt-2 text-xs leading-5 text-zinc-500">Add one at a time or paste a list. Your daily cards are shuffled from this pool.</p>
+      <p className="mt-2 text-xs leading-5 text-zinc-500">Add one at a time or paste a list. Draft text is included when you create the room.</p>
       <div className="mt-3 flex gap-2">
-        <input id="new-item" value={item} onChange={(event) => setItem(event.target.value)} onKeyDown={(event) => {
+        <input id="new-item" {...register("draftItem")} onKeyDown={(event) => {
           if (event.key === "Enter") {
             event.preventDefault();
             addItems([item]);
-            setItem("");
+            setValue("draftItem", "", { shouldDirty: true, shouldValidate: true });
           }
         }} placeholder="Type an item and press Enter" className={`${fieldClass} h-11 min-w-0`} />
-        <Button type="button" variant="outline" className="h-11 px-4" disabled={!item.trim()} onClick={() => { addItems([item]); setItem(""); }}><Plus className="size-4" /> Add</Button>
+        <Button type="button" variant="outline" className="h-11 px-4" disabled={!item.trim()} onClick={() => { addItems([item]); setValue("draftItem", "", { shouldDirty: true, shouldValidate: true }); }}><Plus className="size-4" /> Add</Button>
       </div>
       {itemPool.length > 0 && (
         <ul aria-label="Bingo items" className="mt-4 flex max-h-56 flex-wrap gap-2 overflow-y-auto">
@@ -105,13 +107,14 @@ export function CreateRoomForm() {
       <details className="mt-5 rounded-xl border border-zinc-800 bg-zinc-950/50 p-4">
         <summary className="cursor-pointer text-sm font-medium text-zinc-300">Bulk paste items</summary>
         <label htmlFor="bulk-items" className="mt-4 block text-xs text-zinc-400">One item per line</label>
-        <textarea id="bulk-items" rows={5} value={bulkItems} onChange={(event) => setBulkItems(event.target.value)} placeholder={"First item\nSecond item\nThird item"} className={`${fieldClass} mt-2 py-3`} />
-        <Button type="button" variant="outline" className="mt-3" disabled={!bulkItems.trim()} onClick={() => { addItems(bulkItems.split(/\r?\n/)); setBulkItems(""); }}>Add pasted items</Button>
+        <textarea id="bulk-items" rows={5} {...register("bulkItems")} placeholder={"First item\nSecond item\nThird item"} className={`${fieldClass} mt-2 py-3`} />
+        <Button type="button" variant="outline" className="mt-3" disabled={!bulkItems.trim()} onClick={() => { addItems(bulkItems.split(/\r?\n/)); setValue("bulkItems", "", { shouldDirty: true, shouldValidate: true }); }}>Add pasted items</Button>
       </details>
       {errors.itemPool && <p role="alert" className="mt-3 text-sm text-red-400">{errors.itemPool.message}</p>}
       {serverError && <p role="alert" className="mt-5 text-sm text-red-400">{serverError}</p>}
-      {!isLoading && !isAuthenticated && <p role="alert" className="mt-5 text-sm text-red-400">Your session could not be connected. Please sign out and sign in again.</p>}
-      <Button type="submit" disabled={!isAuthenticated || isSubmitting || !name.trim() || itemPool.length < minimum} className="mt-8 h-11 w-full font-semibold">{isSubmitting ? "Creating room..." : "Create room"} <ArrowRight className="size-4" /></Button>
+      {isLoading ? <p role="status" className="mt-5 text-sm text-zinc-400">Connecting your session...</p> : !isAuthenticated && <p role="alert" className="mt-5 text-sm text-red-400">Your session could not connect to Convex. Check your connection or sign out and sign in again.</p>}
+      {!name.trim() && <p className="mt-5 text-sm text-zinc-400">Enter a room name to continue.</p>}
+      <Button type="submit" disabled={!isAuthenticated || isSubmitting || !name.trim() || itemCount < minimum} className="mt-8 h-11 w-full font-semibold">{isSubmitting ? "Creating room..." : "Create room"} <ArrowRight className="size-4" /></Button>
     </form>
   );
 }
